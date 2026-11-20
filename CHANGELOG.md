@@ -2,13 +2,15 @@
 
 ## Unreleased
 
-FEATURE: Windows work on macOS, from a bare binary or from an application bundle. A window process takes the regular activation policy, so it has a Dock icon and the menu bar even when started from an `LSUIElement` menu bar daemon. It carries the standard application, Edit and Window menus, so Cut, Copy, Paste, Select All and Undo reach the page, and Quit closes the window rather than ending the process early. It comes to the front with the keyboard in the page when it opens, and takes the front once more if the menu it was opened from hands the activation back. Links with `target="_blank"` and `window.open` open `http`, `https` and `mailto` addresses in the default browser. `examples/dfw-example-macos` is the native fixture, with a `bundle.sh` that packs it as a menu bar application.
+FEATURE: Windows work on macOS, from a bare binary or from an application bundle. A window process takes the regular activation policy, so it has a Dock icon and the menu bar even when started from an `LSUIElement` menu bar daemon. It carries the standard application, Edit and Window menus, so Cut, Copy, Paste, Select All and Undo reach the page, and Quit, from the menu, the Dock, a logout or a script, closes the window rather than ending the process early. It comes to the front with the keyboard in the page when it opens, and takes the front once more if the menu it was opened from hands the activation back. Links with `target="_blank"` and `window.open` open `http`, `https` and `mailto` addresses in the default browser. `examples/dfw-example-macos` is the native fixture, with a `bundle.sh` that packs it as a menu bar application.
 
 FIX: The file chooser opens on macOS. webview_go's UI delegate was released as soon as it was set, so `<input type="file">` did nothing; dfw now sets and holds its own, which opens a sheet on the window and also answers the new-window links above.
 
 FEATURE: `DaemonApp.OnReopen` answers a running tray daemon being opened again on macOS, from Finder, the Dock, Spotlight, Launchpad or `open`. macOS starts no second process then and reports the reopen to the running one, where nothing visible happened before; the usual answer opens a window. Other platforms never call it.
 
-CHANGE: On macOS the tray title is only the tooltip. The menu bar drew it as text beside the icon, which widened the status item and hid it sooner beside a notch.
+FIX: A macOS window that no `InitialSize` or saved state gives a size has its close and minimize buttons. It had neither, so Quit, Close and Minimize did nothing to it.
+
+CHANGE: On macOS, when the tray has an icon, the title is only the tooltip. The menu bar drew it as text beside the icon, which widened the status item and hid it sooner beside a notch. A tray with no icon still shows its title.
 
 ## v0.1.6
 

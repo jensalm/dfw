@@ -169,15 +169,62 @@ static void dfw_prepare_app(void) {
 	[[NSApplication sharedApplication] setActivationPolicy:NSApplicationActivationPolicyRegular];
 }
 
+nm// DFWQuitHandler answers the quit Apple Event, which the Dock's Quit, a
+// logout or restart, and `quit app` from a script send. NSApplication's own
+// handler calls terminate:, which exits inside the run loop before Window or
+// Run returns, so the window state, the server's shutdown and every deferred
+// cleanup are skipped. this one closes the window, as Quit in the menu does.
+// it is a handler and not applicationShouldTerminate:, because cancelling
+// there cancels a logout too, and a later reply would be due after the run
+// loop that has to carry it has ended.
+@interface DFWQuitHandler : NSObject
+@property (weak) NSWindow *window;
+- (void)handleQuit:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply;
+@end
+
+@implementation DFWQuitHandler
+- (void)handleQuit:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply {
+	[[self window] performClose:nil];
+}
+@end
+
+// the Apple Event manager does not hold its handlers.
+static DFWQuitHandler *dfw_quit_handler;
+
+// NSApplication registers its own handler in finishLaunching, which would
+// replace this one. it has run by now: webview_go's constructor runs the
+// application until applicationDidFinishLaunching:, and the run loop that
+// Run enters later does not register it again.
+static void dfw_install_quit_handler(NSWindow *window) {
+	if (dfw_quit_handler == nil) {
+		dfw_quit_handler = [[DFWQuitHandler alloc] init];
+	}
+	[dfw_quit_handler setWindow:window];
+	[[NSAppleEventManager sharedAppleEventManager] setEventHandler:dfw_quit_handler
+		andSelector:@selector(handleQuit:withReplyEvent:)
+		forEventClass:kCoreEventClass
+		andEventID:kAEQuitApplication];
+}
+
+// webview_go's window is titled only, and gets its close and minimize
+// buttons from SetSize, which dfw calls only for a size it knows. a window
+// without them ignores performClose: and performMiniaturize:, so Quit, Close,
+// Minimize and a quit from the Dock or a logout would all do nothing.
+static void dfw_make_closable(NSWindow *window) {
+	[window setStyleMask:[window styleMask] | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable];
+}
+
 // its own pool, drained before it returns: whatever must outlive the call is
 // held by something other than autorelease.
 static void dfw_apply_app(void *window) {
 	@autoreleasepool {
 		NSWindow *w = (__bridge NSWindow *)window;
+		dfw_make_closable(w);
 		NSMenu *windows = nil;
 		[NSApp setMainMenu:dfw_main_menu(w, &windows)];
 		[NSApp setWindowsMenu:windows];
 		dfw_own_ui_delegate(w);
+		dfw_install_quit_handler(w);
 	}
 }
 
@@ -215,18 +262,58 @@ static void dfw_activate_app(void) {
 	});
 }
 
-// a window that is never shown, holding a web view as webview_go's does,
-// for the tests to apply the menu and the delegate to.
+// a window that is never shown, titled only and holding a web view as
+// webview_go's is, for the tests to apply the menu and the delegate to.
 static void *dfw_new_hidden_window(void) {
 	[NSApplication sharedApplication];
 	NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 100, 100)
-		styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+		styleMask:NSWindowStyleMaskTitled
 		backing:NSBackingStoreBuffered
 		defer:YES];
 	[w setReleasedWhenClosed:NO];
 	[w setContentView:[[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)
 		configuration:[[WKWebViewConfiguration alloc] init]]];
 	return (__bridge_retained void *)w;
+}
+
+// the window's buttons, for the tests.
+static char *dfw_describe_window_style(void *window) {
+	NSWindowStyleMask mask = [(__bridge NSWindow *)window styleMask];
+	NSString *s = [NSString stringWithFormat:@"closable=%d miniaturizable=%d",
+		(mask & NSWindowStyleMaskClosable) != 0, (mask & NSWindowStyleMaskMiniaturizable) != 0];
+	return strdup([s UTF8String]);
+}
+
+// records the window being asked to close, and keeps it open.
+@interface DFWCloseRecorder : NSObject <NSWindowDelegate>
+@property int asked;
+@end
+
+@implementation DFWCloseRecorder
+- (BOOL)windowShouldClose:(NSWindow *)window {
+	[self setAsked:[self asked] + 1];
+	return NO;
+}
+@end
+
+// sends this process the quit Apple Event, as the Dock's Quit does, and
+// counts the times the window is asked to close, for the tests.
+static int dfw_quit_event_close_requests(void *window) {
+	NSWindow *w = (__bridge NSWindow *)window;
+	DFWCloseRecorder *recorder = [[DFWCloseRecorder alloc] init];
+	id<NSWindowDelegate> previous = [w delegate];
+	[w setDelegate:recorder];
+	NSAppleEventDescriptor *event = [NSAppleEventDescriptor appleEventWithEventClass:kCoreEventClass
+		eventID:kAEQuitApplication
+		targetDescriptor:[NSAppleEventDescriptor currentProcessDescriptor]
+		returnID:kAutoGenerateReturnID
+		transactionID:kAnyTransactionID];
+	AppleEvent reply = {typeNull, NULL};
+	// the reference constant goes unused, but may not be null.
+	[[NSAppleEventManager sharedAppleEventManager] dispatchRawAppleEvent:[event aeDesc] withRawReply:&reply handlerRefCon:(__bridge void *)w];
+	AEDisposeDesc(&reply);
+	[w setDelegate:previous];
+	return [recorder asked];
 }
 
 // describes the main menu as "Menu: Title=mods+key/action>target; ...|...",
@@ -278,8 +365,9 @@ func activateNativeApp() {
 	C.dfw_activate_app()
 }
 
-// newNativeHiddenWindow, describeNativeUIDelegate and describeNativeMainMenu
-// serve the tests, which cannot use cgo themselves.
+// newNativeHiddenWindow, the describeNative helpers and
+// nativeQuitEventCloseRequests serve the tests, which cannot use cgo
+// themselves.
 func newNativeHiddenWindow() unsafe.Pointer {
 	return C.dfw_new_hidden_window()
 }
@@ -294,4 +382,14 @@ func describeNativeMainMenu() string {
 	description := C.dfw_describe_main_menu()
 	defer C.free(unsafe.Pointer(description))
 	return C.GoString(description)
+}
+
+func describeNativeWindowStyle(window unsafe.Pointer) string {
+	description := C.dfw_describe_window_style(window)
+	defer C.free(unsafe.Pointer(description))
+	return C.GoString(description)
+}
+
+func nativeQuitEventCloseRequests(window unsafe.Pointer) int {
+	return int(C.dfw_quit_event_close_requests(window))
 }

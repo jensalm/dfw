@@ -15,8 +15,10 @@ import (
 // read in TestMain: AppKit wants the main thread, and only TestMain's
 // goroutine holds it (webview_go locks it in init).
 var (
-	nativeMainMenu   map[string][]string
-	nativeUIDelegate string
+	nativeMainMenu          map[string][]string
+	nativeUIDelegate        string
+	nativeWindowStyle       string
+	nativeQuitCloseRequests int
 )
 
 func TestMain(m *testing.M) {
@@ -24,7 +26,21 @@ func TestMain(m *testing.M) {
 	applyNativeApp(window)
 	nativeMainMenu = parseNativeMenu(describeNativeMainMenu())
 	nativeUIDelegate = describeNativeUIDelegate(window)
+	nativeWindowStyle = describeNativeWindowStyle(window)
+	nativeQuitCloseRequests = nativeQuitEventCloseRequests(window)
 	os.Exit(m.Run())
+}
+
+// the hidden window starts titled only, as webview_go's does until SetSize.
+func TestNativeWindowIsClosableWithoutASize(t *testing.T) {
+	assert.Equal(t, "closable=1 miniaturizable=1", nativeWindowStyle)
+}
+
+// the Dock's Quit and a logout send the quit Apple Event. NSApplication's
+// own handler would call terminate: and end the process inside the run loop;
+// dfw's asks the window to close, once.
+func TestNativeQuitEventClosesTheWindow(t *testing.T) {
+	assert.Equal(t, 1, nativeQuitCloseRequests)
 }
 
 // applyNativeApp drains its own autorelease pool before it returns, so a

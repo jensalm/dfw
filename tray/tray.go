@@ -70,14 +70,16 @@ func runTray(config trayConfig) error {
 // trayShowsTitle reports whether the title is set on the tray item itself.
 // macOS draws a status item's title as text beside its icon, which widens it
 // in a crowded menu bar and hides it sooner beside a notch; there the title
-// is only the tooltip. other platforms set it as before.
-func trayShowsTitle(goos string) bool {
-	return goos != "darwin"
+// is only the tooltip when an icon is set. without an icon the title is all
+// the status item shows, and without it the item would be empty, so it stays.
+// other platforms set it as before.
+func trayShowsTitle(goos string, hasIcon bool) bool {
+	return goos != "darwin" || !hasIcon
 }
 
 func configureTray(config trayConfig, quit func()) error {
 	if config.Title != "" {
-		if trayShowsTitle(runtime.GOOS) {
+		if trayShowsTitle(runtime.GOOS, len(config.IconPNG) > 0) {
 			systray.SetTitle(config.Title)
 		}
 		systray.SetTooltip(config.Title)
