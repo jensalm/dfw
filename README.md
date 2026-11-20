@@ -8,7 +8,7 @@
 
 `dfw` is a small Go library that wraps an HTTP server and a webview window into a single desktop application. You bring the server and the web UI; `dfw` provides the process, the window, and — if you want it — a system tray daemon to keep the server resident between window sessions.
 
-It is intentionally narrow. The library does not ship a UI framework, a JavaScript-to-Go bridge, a request proxy, general-purpose native dialogs, a native menu bar, single-instance enforcement, or packaging tooling. Products own their HTTP API, their web UI, their background work, and their distribution; `dfw` just gives the result a window.
+It is intentionally narrow. The library does not ship a UI framework, a JavaScript-to-Go bridge, a request proxy, general-purpose native dialogs, a configurable native menu bar, single-instance enforcement, or packaging tooling. Products own their HTTP API, their web UI, their background work, and their distribution; `dfw` just gives the result a window.
 
 ## The Three Modes
 
@@ -26,7 +26,7 @@ The HTTP server and the webview run in the same process. The window opens, navig
 
 A long-running process owns the HTTP server and shows a system tray icon. Background work keeps running with the tray visible; opening a window is a separate step.
 
-The daemon can take part in its own lifetime. `DaemonApp.OnQuit` is asked when `Quit` is chosen and can decline it, so a daemon holding work in flight can confirm first or shut down gracefully. A `tray.Control`, created with `tray.NewControl()` and passed in `DaemonApp.Control`, lets the product change the tray icon, the tooltip, and its items' labels and enabled state from any goroutine while the daemon runs, and end the daemon itself with `Stop`. [`examples/dfw-example-tray`](examples/dfw-example-tray) is the small fixture for both; the contract is in [Runtime › Tray](docs/current/runtime.md#tray).
+The daemon can take part in its own lifetime. `DaemonApp.OnQuit` is asked when `Quit` is chosen and can decline it, so a daemon holding work in flight can confirm first or shut down gracefully. A `tray.Control`, created with `tray.NewControl()` and passed in `DaemonApp.Control`, lets the product change the tray icon, the tooltip, and its items' labels and enabled state from any goroutine while the daemon runs, and end the daemon itself with `Stop`. [`examples/dfw-example-tray`](examples/dfw-example-tray) is the small fixture for both; the contract is in [Runtime › Tray](docs/current/runtime.md#tray). On macOS, `DaemonApp.OnReopen` answers the application being opened again while it runs, which macOS reports to the running daemon instead of starting another.
 
 | Linux | Windows |
 | :---: | :---: |
@@ -81,13 +81,13 @@ For PDF export on Linux, opt into `App.PDF` or `WindowApp.PDF`: a native destina
 | :--- | :--- | :--- | :--- | :--- |
 | Linux | WebKitGTK 4.1 | StatusNotifier / AppIndicator | persisted | intercepted |
 | Windows | WebView2 | system tray | persisted | intercepted |
-| macOS | deferred | deferred | not persisted | opt-in fails |
+| macOS | WKWebView | menu bar status item | not persisted | opt-in fails |
 
 Building the webview portion requires a CGO-capable toolchain plus the platform's native webview headers; a consumer that imports only `dfw/tray` builds without them. See [docs/current/building.md](docs/current/building.md) for distro-specific package names and the full build sequence.
 
 ## Status
 
-Initial implementation. The library is feature-complete for the v1 scope on Linux and Windows. macOS is deferred until the webview and window-position integrations are exercised; the unsupported build tags keep the library compiling on macOS but window position is not persisted.
+Initial implementation. The library is feature-complete for the v1 scope on Linux and Windows. On macOS the tray daemon and its windows work, from a bare binary or from an application bundle: a window process is a regular application with the standard application, Edit and Window menus, takes the focus when it opens, opens the file chooser, and sends links that open a new window to the default browser. Window position is not persisted there, and `OnCloseRequest` fails window setup. [`examples/dfw-example-macos`](examples/dfw-example-macos) is the native fixture; see [Runtime › macOS windows](docs/current/runtime.md#macos-windows).
 
 ## Documentation
 

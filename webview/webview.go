@@ -48,12 +48,14 @@ func newConfiguredDesktopWebView(config webviewConfig) (*desktopWebView, error) 
 	appID := strings.TrimSpace(config.AppID)
 	prepareNativeWindowIdentity(appID)
 	prepareNativeJavaScriptSignals()
+	prepareNativeApp()
 
 	w := webview.New(config.Debug)
 	if w == nil {
 		return nil, errors.New("dfw: create webview")
 	}
 	applyNativeWindowIdentity(w.Window(), appID)
+	applyNativeApp(w.Window())
 
 	termination := config.termination
 	if termination == nil {
@@ -157,6 +159,7 @@ func (w *desktopWebView) Run() {
 	w.w.Dispatch(func() {
 		w.termination.ready()
 		w.pdf.markReady()
+		activateNativeApp()
 	})
 	w.w.Run()
 	w.endLifecycle()

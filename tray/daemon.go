@@ -56,6 +56,7 @@ func Daemon(app DaemonApp) (err error) {
 		SpawnWindow: app.SpawnWindow,
 		TrayItems:   app.TrayItems,
 		OnQuit:      app.OnQuit,
+		OnReopen:    app.OnReopen,
 		Control:     app.Control,
 		Stop:        trayStop,
 	})

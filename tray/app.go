@@ -26,6 +26,13 @@ type DaemonApp struct {
 	// promptly; "Quit" chosen again while it runs is ignored. a nil OnQuit
 	// preserves the unconditional Quit.
 	OnQuit func() bool
+	// OnReopen is called on macOS when the application is opened again while
+	// its daemon runs, from Finder, the Dock, Spotlight, Launchpad or open:
+	// macOS starts no second process then, it tells the running one, and
+	// without OnReopen nothing visible happens. the usual answer opens a
+	// window. it runs on a goroutine of its own. other platforms never call
+	// it; a nil OnReopen leaves reopening as it was.
+	OnReopen func()
 	// Control optionally lets the application change the tray icon, tooltip,
 	// and TrayItems while the daemon runs, and end the daemon itself. see
 	// NewControl.

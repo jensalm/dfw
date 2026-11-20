@@ -72,6 +72,19 @@ Supported on Linux (GTK `delete-event`) and Windows (`WM_CLOSE` through the wind
 
 Both platforms were exercised against a real window with `examples/dfw-example-close` on 2026-09-17: Windows through the title-bar control, Linux through the title-bar control under Wayland and through synthesized `WM_DELETE_WINDOW` requests under XWayland.
 
+## macOS windows
+
+A window on macOS, from `Run` or from `Window`, is set up as an application in its own right. A product sets none of this, and none of it is configurable.
+
+- **The regular activation policy.** The process gets a Dock icon and the menu bar while its window is open. That matters in a bundle with `LSUIElement`, as a menu bar daemon has: every process started from that bundle would otherwise be an accessory with neither, and webview_go leaves a bundled application's policy alone.
+- **The standard menus.** The application menu has About, Hide, Hide Others, Show All and Quit; Edit has Undo, Redo, Cut, Copy, Paste, Paste and Match Style and Select All; Window has Minimize, Zoom and Close. Without the Edit menu, WebKit receives none of those key equivalents, so Cmd+C and Cmd+V do nothing in the page. Quit (Cmd+Q) closes this window, as Close (Cmd+W) and the title-bar control do, so the entry point returns through its ordinary path and saves the window state. A daemon that started the window keeps running.
+- **The focus.** As the run loop starts, the window is brought to the front and made key, with the web view as the first responder, so typing goes straight into the page. A window opened from a status item's menu loses the activation to the application that was active before the menu, as the menu closes; if the application is not active 800 ms after it starts, the window takes the front once more. The call is `activateIgnoringOtherApps:`, deprecated since macOS 14: the cooperative `activate` is refused, because nothing yields to a process the daemon started.
+- **The web view's UI delegate is dfw's.** webview_go sets one that is autoreleased as it is set, and WKWebView holds its delegate weakly, so it is gone before the run loop turns: the file chooser never opened and new-window links were dropped. dfw sets its own in its place, held by the web view itself, which answers two things:
+  - **The file chooser.** `<input type="file">` opens a sheet on the window, for files, or for folders on a `webkitdirectory` input, with multiple selection where the input allows it.
+  - **New-window links.** A link with `target="_blank"` and `window.open` ask for a new web view. An `http`, `https` or `mailto` address opens in the user's default handler, any other scheme is dropped, and no second web view is ever created. A plain link still navigates the window.
+
+These were exercised by hand on macOS 26.6 (arm64) with `examples/dfw-example-macos`, from its bundle, on 2026-11-20.
+
 ## PDF export
 
 `App.PDF` and `WindowApp.PDF` opt into a Linux native save chooser and system-Chromium renderer. A render uses a private temporary `dfw-pdf-*` directory directly under the user's home, rather than the configuration tree or a personal browser profile. Normal cleanup removes it; a hard kill may leave it behind. Window cancellation remains observable after rendering through `PDFExporter.WindowContext()`, so a product can prevent later publication when its window has ended. The complete API, process policy, limits, and verification status live in [PDF export](pdf.md).
@@ -116,7 +129,7 @@ Products typically expose this via a `--devtools` flag that sets `DFW_DEVTOOLS=1
 2. **Product items** — each `TrayMenuItem` from `DaemonApp.TrayItems` becomes a menu entry with the supplied `Label`, `Tooltip`, and `OnClick`. `Disabled: true` items are added but greyed out.
 3. **Separator + `Quit`** — choosing `Quit` triggers the systray shutdown, which returns control to `tray.Daemon` and lets the library's deferred cleanup run, unless `OnQuit` declines it.
 
-Items cannot be added or removed after startup, and an item's tooltip stays as it was built; the icon, the tray tooltip, and each product item's label and enabled state can change through a `Control` (below). The tray tooltip and title are set from `DaemonApp.Title` when non-empty.
+Items cannot be added or removed after startup, and an item's tooltip stays as it was built; the icon, the tray tooltip, and each product item's label and enabled state can change through a `Control` (below). The tray tooltip and title are set from `DaemonApp.Title` when non-empty. On macOS the title is only the tooltip: the menu bar would draw it as text beside the icon, which widens the item and hides it sooner in a crowded menu bar or beside a notch.
 
 ### Quit requests
 
@@ -125,6 +138,10 @@ Set `DaemonApp.OnQuit` to take part in Quit. It is called when `Quit` is chosen:
 `OnQuit` is a synchronous predicate, unlike `webview.CloseRequest`, because the decision it makes is "may I quit right now" and a product that needs longer already has `Control.Stop` to finish with. It runs on the tray's own goroutine and should return promptly. `Quit` chosen again while it runs is dropped, not queued, so it is never re-entered.
 
 The hook covers the `Quit` item only. `Control.Stop` and a supervised server failure end the daemon without consulting it.
+
+### Reopening on macOS
+
+Opening a running application again on macOS, from Finder, the Dock, Spotlight, Launchpad or `open`, starts no second process: macOS sends the running one a reopen event instead. A menu bar daemon has no window to show, so without help nothing visible happens. Set `DaemonApp.OnReopen` to answer it; the usual answer opens a window, as `Open Window` does. dfw installs its own handler for the event once the tray is up, in place of NSApplication's, which would ask a delegate systray does not give it. `OnReopen` runs on a goroutine of its own for each event, so a slow answer holds up nothing. It is never called on other platforms, where a second launch is a second process and single-instance handling stays the product's. A nil `OnReopen` leaves reopening as it was.
 
 ### Changing the tray while it runs
 
@@ -147,6 +164,8 @@ A `Control` serves one `Daemon` call. Passing one that has already been used to 
 - **Windows window icon** — decoded, repacked as a DIB, and attached to the HWND.
 - **Linux tray icon** — PNG bytes passed through to `systray` (which hands them to the StatusNotifier protocol).
 - **Windows tray icon** — wrapped in an ICO container before being handed to `systray`.
+- **macOS tray icon** — PNG bytes passed through to `systray`, which draws them at 16×16 points in the menu bar, in color (not as a template image).
+- **macOS window icon** — not applied. The Dock shows the bundle's icon (`CFBundleIconFile`), or a generic one for a bare binary.
 
 No client-side resizing happens. Supply an icon at a reasonable display size (32×32 is a good default for tray icons; window icons are commonly larger).
 

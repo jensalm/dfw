@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>dfw Example macOS</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px -apple-system, system-ui, sans-serif; margin: 24px; }
+  h2 { margin: 20px 0 6px; font-size: 15px; }
+  textarea { width: 90%; height: 56px; font: inherit; }
+  pre { white-space: pre-wrap; padding: 8px; background: rgba(127, 127, 127, 0.15); }
+</style>
+</head>
+<body>
+<h1>dfw Example macOS</h1>
+
+<h2>1. Keyboard</h2>
+<p>Press Cmd+A at once, without clicking: the page reports the key, so the keyboard is in the page. Then click the first box for Cmd+A and Cmd+C, the second for Cmd+V, and press Cmd+Z.</p>
+<textarea id="first">copy this text</textarea>
+<textarea id="second" placeholder="paste here"></textarea>
+
+<h2>2. Links</h2>
+<p><a href="https://example.com/" target="_blank" rel="noopener noreferrer">a link with target="_blank"</a> and <button id="open">window.open</button> open the default browser; this window stays as it is.</p>
+
+<h2>3. File chooser</h2>
+<p><input type="file" id="files" multiple> <input type="file" id="folder" webkitdirectory> <span id="chosen"></span></p>
+
+<h2>What the page saw</h2>
+<pre id="seen">nothing yet</pre>
+
+<script>
+  const seen = document.getElementById('seen')
+  const report = (m) => {
+    seen.textContent = m
+    fetch('/api/report?m=' + encodeURIComponent(m), { method: 'POST' }).catch(() => {})
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      report(`key ${e.key} meta=${e.metaKey} ctrl=${e.ctrlKey} alt=${e.altKey} shift=${e.shiftKey}`)
+    }
+  })
+  for (const id of ['first', 'second']) {
+    const box = document.getElementById(id)
+    for (const kind of ['cut', 'copy', 'paste']) {
+      box.addEventListener(kind, () => report(`${kind} in ${id}`))
+    }
+  }
+  document.querySelector('a').addEventListener('click', () => report('clicked the target="_blank" link'))
+  document.getElementById('open').addEventListener('click', () => {
+    report('called window.open')
+    window.open('https://example.com/?from=window.open', '_blank')
+  })
+  for (const id of ['files', 'folder']) {
+    document.getElementById(id).addEventListener('change', (e) => {
+      const n = e.target.files.length
+      document.getElementById('chosen').textContent = `${n} chosen`
+      report(`${id} chooser returned ${n}`)
+    })
+  }
+  report('loaded')
+</script>
+</body>
+</html>

@@ -76,7 +76,19 @@ This is a binary-level choice. For a single binary with subcommands (as in the e
 
 ## macOS
 
-Deferred for v1. The library compiles on macOS (the `_unsupported` build tags fill in noop implementations for window-bounds tracking, icon application, and tray icon conversion), but window position is not persisted and the webview integration has not been exercised. A configured `OnCloseRequest` does not degrade the same way: it fails window setup on macOS rather than opening a window that closes without asking. Treat macOS as not yet supported until that changes.
+The webview is WKWebView and the tray is an `NSStatusItem` in the menu bar, both through system frameworks (Cocoa, WebKit). A CGO-capable toolchain is the only prerequisite: the Xcode Command Line Tools (`xcode-select --install`) supply `clang` and the SDK. `dfw/tray` needs cgo here too, unlike on Linux.
+
+Window position is not persisted (the `_unsupported` build tags fill in noop implementations for window-bounds tracking, window icons and tray icon conversion), PDF export is Linux-only, and a configured `OnCloseRequest` fails window setup rather than opening a window that closes without asking. What a window does on macOS is in [runtime.md](runtime.md#macos-windows).
+
+### Application bundles
+
+A product that ships as an `.app` brings its own bundle; `dfw` ships no packaging. Three things it learned the hard way, all exercised by [`examples/dfw-example-macos`](../../examples/dfw-example-macos/README.md) and its `bundle.sh`:
+
+- **The binary is the bundle's executable.** `CFBundleExecutable` must name the Go binary itself. A shell script there, even one that only `exec`s the binary, leaves the tray's status item unshown on macOS 26: the process runs, and nothing appears in the menu bar.
+- **A menu bar daemon sets `LSUIElement`.** The daemon then has no Dock icon or application menu, only its status item. The window processes it starts take the regular activation policy themselves (runtime.md), so a window gets a Dock icon and the menu bar while it is open.
+- **Sign it, at least ad hoc.** `codesign --force --sign - App.app` is enough to run on the machine that built it. Distribution to other machines needs a Developer ID signature and notarization, which are the product's.
+
+An application started from Finder or the Dock gets launchd's environment, not a shell's: `PATH` is `/usr/bin:/bin:/usr/sbin:/sbin`, `SHELL` names the user's shell, and `LANG` is unset. A product that runs tools from the user's shell resolves that environment itself.
 
 ## Building the Example
 

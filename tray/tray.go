@@ -2,6 +2,7 @@ package tray
 
 import (
 	"fmt"
+	"runtime"
 
 	"fyne.io/systray"
 	"github.com/michaelquigley/df/dl"
@@ -15,6 +16,7 @@ type trayConfig struct {
 	SpawnWindow func(daemonAddr string) error
 	TrayItems   []TrayMenuItem
 	OnQuit      func() bool
+	OnReopen    func()
 	Control     *Control
 	Stop        <-chan struct{}
 }
@@ -38,6 +40,10 @@ func runTray(config trayConfig) error {
 			return
 		}
 		ready <- nil
+		if config.OnReopen != nil {
+			setReopenHandler(config.OnReopen)
+			installReopenHandler()
+		}
 		if config.Stop != nil {
 			go func() {
 				select {
@@ -48,6 +54,7 @@ func runTray(config trayConfig) error {
 			}()
 		}
 	}, func() {
+		setReopenHandler(nil)
 		config.Control.end()
 		close(exited)
 	})
@@ -60,9 +67,19 @@ func runTray(config trayConfig) error {
 	}
 }
 
+// trayShowsTitle reports whether the title is set on the tray item itself.
+// macOS draws a status item's title as text beside its icon, which widens it
+// in a crowded menu bar and hides it sooner beside a notch; there the title
+// is only the tooltip. other platforms set it as before.
+func trayShowsTitle(goos string) bool {
+	return goos != "darwin"
+}
+
 func configureTray(config trayConfig, quit func()) error {
 	if config.Title != "" {
-		systray.SetTitle(config.Title)
+		if trayShowsTitle(runtime.GOOS) {
+			systray.SetTitle(config.Title)
+		}
 		systray.SetTooltip(config.Title)
 	}
 	if len(config.IconPNG) > 0 {
